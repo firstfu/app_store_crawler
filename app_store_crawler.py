@@ -18,6 +18,27 @@ import pandas as pd
 import requests
 
 
+def format_price(app):
+    """
+    格式化價格信息
+    :param app: 應用信息
+    :return: 價格詳細信息字典
+    """
+    price = app.get("price", 0)
+    currency = app.get("currency", "USD")
+
+    price_info = {
+        "價格類型": "免費" if price == 0 else "付費",
+        "當前價格": f"${price}" if price > 0 else "免費",
+        "幣種": currency,
+        "原價": app.get("formattedPrice", "N/A"),
+        "應用內購買": "是" if app.get("isGameCenterEnabled") else "否",
+        "價格等級": f"Tier {app.get('price_tier', 'N/A')}" if price > 0 else "N/A",
+    }
+
+    return price_info
+
+
 def calculate_credibility_score(app, reviews):
     """
     計算應用的可信度評分
@@ -28,6 +49,7 @@ def calculate_credibility_score(app, reviews):
     # 基礎數據
     rating = float(app.get("averageUserRating", 0))
     rating_count = int(app.get("userRatingCount", 0))
+    price = float(app.get("price", 0))
 
     # 1. 評分數量權重 (使用對數函數平滑處理)
     count_weight = min(1.0, math.log(rating_count + 1) / math.log(10000)) if rating_count > 0 else 0
@@ -56,6 +78,10 @@ def calculate_credibility_score(app, reviews):
     rating_distribution_score = 1.0
     if rating > 4.8 and rating_count < 100:  # 高分但評分數少，可能有刷分嫌疑
         rating_distribution_score *= 0.7
+
+    # 付費應用額外評分加權（付費應用一般評分更嚴格）
+    if price > 0:
+        rating_distribution_score *= 1.1
 
     # 4. 時間衰減因子（優先展示較新的應用）
     try:
@@ -121,7 +147,7 @@ def fetch_reviews(app_id, country="tw", limit=50):
     return reviews[:limit]
 
 
-def search_apps(keyword, country="tw", limit=40):
+def search_apps(keyword, country="tw", limit=200):
     """
     搜索 App Store 應用
     :param keyword: 搜索關鍵字
@@ -163,7 +189,17 @@ def print_app_info(app, score):
     print(f"應用名稱: {app.get('trackName', 'N/A')}")
     print(f"開發者: {app.get('artistName', 'N/A')}")
     print(f"應用類別: {app.get('primaryGenreName', 'N/A')}")
-    print(f"價格: {'免費' if app.get('price', 0) == 0 else f'${app.get('price')}'}")
+
+    # 打印價格詳細信息
+    price_info = app.get("價格信息", {})
+    print(f"價格類型: {price_info.get('價格類型', 'N/A')}")
+    print(f"當前價格: {price_info.get('當前價格', 'N/A')}")
+    print(f"幣種: {price_info.get('幣種', 'N/A')}")
+    if price_info.get("價格類型") == "付費":
+        print(f"原價: {price_info.get('原價', 'N/A')}")
+        print(f"價格等級: {price_info.get('價格等級', 'N/A')}")
+    print(f"應用內購買: {price_info.get('應用內購買', 'N/A')}")
+
     print(f"評分: {app.get('averageUserRating', 'N/A')}")
     print(f"評分數量: {app.get('userRatingCount', 'N/A')}")
     print(f"可信度評分: {score}")
@@ -221,12 +257,15 @@ def main():
         # 計算可信度評分
         credibility_score = calculate_credibility_score(app, reviews)
 
+        # 獲取價格詳細信息
+        price_info = format_price(app)
+
         # 整理應用數據
         app_data = {
             "應用名稱": app.get("trackName", "N/A"),
             "開發者": app.get("artistName", "N/A"),
             "應用類別": app.get("primaryGenreName", "N/A"),
-            "價格": "免費" if app.get("price", 0) == 0 else f"${app.get('price')}",
+            "價格信息": price_info,
             "評分": app.get("averageUserRating", "N/A"),
             "評分數量": app.get("userRatingCount", "N/A"),
             "版本": app.get("version", "N/A"),
